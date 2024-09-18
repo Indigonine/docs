@@ -1,0 +1,127 @@
+name: build
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    # needs push event on default branch otherwise cache is evicted when pull request is merged
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read # to fetch code (actions/checkout)
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Build
+        uses: docker/bake-action@v5
+        with:
+          files: |
+            docker-bake.hcl
+          targets: release
+          set: |
+            *.cache-from=type=gha,scope=build
+            *.cache-to=type=gha,scope=build,mode=max
+            - ชื่อ: ตั้งค่าสภาพแวดล้อม Go
+  การใช้งาน: actions/setup-go@v5.0.2
+  กับ:
+    # เวอร์ชัน Go สำหรับดาวน์โหลด (หากจำเป็น) และใช้งาน รองรับสเปกและช่วงของเซมเวอร์ โปรดใส่ตัวเลือกนี้ไว้ในเครื่องหมายคำพูดเดี่ยว
+    go-version: # ตัวเลือก
+    # เส้นทางไปยังไฟล์ go.mod หรือ go.work
+    go-version-file: # ตัวเลือก
+    # ตั้งค่าตัวเลือกนี้เป็นจริง หากคุณต้องการให้การดำเนินการตรวจสอบเวอร์ชันล่าสุดที่มีอยู่ซึ่งตรงตามข้อกำหนดเวอร์ชันเสมอ
+    ตรวจสอบล่าสุด: # ตัวเลือก
+    # ใช้ในการดึงข้อมูลการแจกจ่าย Go จากเวอร์ชัน go เนื่องจากมีค่าเริ่มต้น จึงมักไม่ได้ระบุโดยผู้ใช้ เมื่อเรียกใช้การดำเนินการนี้บน github.com ค่าเริ่มต้นก็เพียงพอแล้ว เมื่อเรียกใช้บน GHES คุณสามารถส่งโทเค็นการเข้าถึงส่วนบุคคลสำหรับ github.com ได้หากคุณประสบปัญหาการจำกัดอัตรา
+    โทเค็น: # ตัวเลือก ค่าเริ่มต้นคือ ${{ github.server_url == 'https://github.com' && github.token || '' }}
+    # ใช้เพื่อระบุว่าจำเป็นต้องมีการแคชหรือไม่ ตั้งค่าเป็น true หากคุณต้องการเปิดใช้งานการแคช
+    แคช: # ตัวเลือก ค่าเริ่มต้นคือ true
+    # ใช้เพื่อระบุเส้นทางไปยังไฟล์การอ้างอิง - go.sum
+    เส้นทางการพึ่งพาแคช: # ตัวเลือก
+    # สถาปัตยกรรมเป้าหมายสำหรับ Go ที่จะใช้ ตัวอย่าง: x86, x64 จะใช้สถาปัตยกรรมระบบตามค่าเริ่มต้น
+    สถาปัตยกรรม: # ตัวเลือก
+          
+     files:
+  - docker-bake.hcl
+targets:
+  - release
+set:
+  - '*.cache-from=type=gha,scope=build'
+  - '*.cache-to=type=gha,scope=build,mode=max'       
+
+
+
+  vale:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: errata-ai/vale-action@reviewdog
+        env:
+          PIP_BREAK_SYSTEM_PACKAGES: 1
+        with:
+          files: content
+
+  validate:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - lint
+          - test
+          - unused-media
+          - test-go-redirects
+          - dockerfile-lint
+          - path-warnings
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Validate
+        uses: docker/bake-action@v5
+        with:
+          files: |
+            docker-bake.hcl
+          targets: ${{ matrix.target }}
+          set: |
+            *.cache-to=type=gha,scope=validate-${{ matrix.target }},mode=max
+            *.cache-from=type=gha,scope=validate-${{ matrix.target }}
+            *.cache-from=type=gha,scope=build
+
+  # build-releaser builds the _releaser used for AWS deployment in publish workflow.
+  # It's just to be sure it builds correctly.
+  build-releaser:
+    runs-on: ubuntu-24.04
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Build
+        uses: docker/bake-action@v5
+        with:
+          files: |
+            docker-bake.hcl
+          targets: releaser-build
+          set: |
+            *.cache-from=type=gha,scope=releaser
+            *.cache-to=type=gha,scope=releaser,mode=max
